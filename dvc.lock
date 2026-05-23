@@ -75,3 +75,39 @@ stages:
       hash: md5
       md5: c11d33bb30333d85777f48821056e3e4
       size: 1080505
+  visualize:
+    cmd: python src/evaluate_and_plot.py
+    deps:
+    - path: models/multimodal_nn_model.keras
+      hash: md5
+      md5: c11d33bb30333d85777f48821056e3e4
+      size: 1080505
+    - path: src/evaluate_and_plot.py
+      hash: md5
+      md5: 5b1f01884a61d8ea65f4cc49f02fe7db
+      size: 5582
+    outs:
+    - path: plots/data_sentiment_distribution.png
+      hash: md5
+      md5: 2b2dea9aa128d483a8e6a297e08adf4c
+      size: 170072
+    - path: plots/model_comparison_matrix.png
+      hash: md5
+      md5: c1b5c9f45f97b0fb0e5722d1fa51c1cf
+      size: 129605
+  test_evaluation:
+    cmd: python src/final_test_evaluation.py
+    deps:
+    - path: models/multimodal_nn_model.keras
+      hash: md5
+      md5: c11d33bb30333d85777f48821056e3e4
+      size: 1080505
+    - path: src/final_test_evaluation.py
+      hash: md5
+      md5: 04a6b525a5e83ee143434f94b6c4985a
+      size: 3878
+    outs:
+    - path: plots/final_test_metrics.csv
+      hash: md5
+      md5: 3d660528e24a1dfaacc2476e1f6505da
+      size: 293

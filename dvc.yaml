@@ -26,3 +26,18 @@ stages:
     - src/train_nn.py
     outs:
     - models/multimodal_nn_model.keras
+  visualize:
+    cmd: python src/evaluate_and_plot.py
+    deps:
+    - models/multimodal_nn_model.keras
+    - src/evaluate_and_plot.py
+    outs:
+    - plots/data_sentiment_distribution.png
+    - plots/model_comparison_matrix.png
+  test_evaluation:
+    cmd: python src/final_test_evaluation.py
+    deps:
+    - models/multimodal_nn_model.keras
+    - src/final_test_evaluation.py
+    outs:
+    - plots/final_test_metrics.csv
