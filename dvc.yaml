@@ -11,3 +11,18 @@ stages:
     - data/processed/y_test.csv
     - data/processed/y_train.csv
     - data/processed/y_val.csv
+  train:
+    cmd: python src/train.py
+    deps:
+    - data/processed/X_train.csv
+    - data/processed/X_val.csv
+    - data/processed/y_train.csv
+    - data/processed/y_val.csv
+    - src/train.py
+  train_nn:
+    cmd: python src/train_nn.py
+    deps:
+    - data/raw/telco_prep.csv
+    - src/train_nn.py
+    outs:
+    - models/multimodal_nn_model.keras

@@ -36,3 +36,42 @@ stages:
       hash: md5
       md5: 0fc9872d0e429a76f32df29fe2a087af
       size: 3172
+  train:
+    cmd: python src/train.py
+    deps:
+    - path: data/processed/X_train.csv
+      hash: md5
+      md5: 9e59afef2e95370d8bd727ffb5468f88
+      size: 731840
+    - path: data/processed/X_val.csv
+      hash: md5
+      md5: 54e9bce9cbfbe9c7efc3f710976fbb42
+      size: 157072
+    - path: data/processed/y_train.csv
+      hash: md5
+      md5: dffedd359dc6939ac744655b93ffbf53
+      size: 14773
+    - path: data/processed/y_val.csv
+      hash: md5
+      md5: 0fc9872d0e429a76f32df29fe2a087af
+      size: 3172
+    - path: src/train.py
+      hash: md5
+      md5: 6fce73a99d67db8a6fbb006b0fd29341
+      size: 2046
+  train_nn:
+    cmd: python src/train_nn.py
+    deps:
+    - path: data/raw/telco_prep.csv
+      hash: md5
+      md5: f826288e48f909437f2ef9c055bd25bc
+      size: 5816428
+    - path: src/train_nn.py
+      hash: md5
+      md5: 3b44a861cb8d34dfb2972420c00fdbc6
+      size: 5831
+    outs:
+    - path: models/multimodal_nn_model.keras
+      hash: md5
+      md5: c11d33bb30333d85777f48821056e3e4
+      size: 1080505
