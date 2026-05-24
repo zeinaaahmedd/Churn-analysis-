@@ -1,128 +1,134 @@
 import os
-import pandas as pd
+import json
+import yaml
+import dagshub
+import mlflow
 import numpy as np
+import pandas as pd
 import tensorflow as tf
+
 from tensorflow.keras import layers, models
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
 
-def load_and_prepare_nn_data():
-    raw_data_path = "data/raw/telco_prep.csv"
-    df = pd.read_csv(raw_data_path)
-    
-    # Clean text input
-    df['CustomerFeedback'] = df['CustomerFeedback'].fillna('').astype(str)
-    y = df['Churn'].values
-    
-    # Process Tabular parts
-    cols_to_drop = ['Unnamed: 0', 'customerID', 'PromptInput', 'CustomerFeedback', 'Churn', 'feedback_length', 'sentiment']
-    X_tab = df.drop(columns=[col for col in cols_to_drop if col in df.columns])
-    
-    numeric_cols = X_tab.select_dtypes(include=['int64', 'float64']).columns.tolist()
-    categorical_cols = X_tab.select_dtypes(include=['object']).columns.tolist()
-    
-    le = LabelEncoder()
-    for col in categorical_cols:
-        X_tab[col] = le.fit_transform(X_tab[col].astype(str))
-        
-    X_text = df['CustomerFeedback'].values
-    
-    # Split indices uniformly to keep tabular and text aligned
-    idx_train, idx_temp = train_test_split(np.arange(len(df)), test_size=0.30, random_state=42, stratify=y)
-    idx_val, idx_test = train_test_split(idx_temp, test_size=0.50, random_state=42, stratify=y[idx_temp])
-    
-    # Scale Tabular features
-    scaler = StandardScaler()
-    X_tab_train = scaler.fit_transform(X_tab.iloc[idx_train][numeric_cols])
-    X_tab_val = scaler.transform(X_tab.iloc[idx_val][numeric_cols])
-    X_tab_test = scaler.transform(X_tab.iloc[idx_test][numeric_cols])
-    
-    # Recombine scaled numeric back with encoded categorical features
-    X_tab_train_full = np.hstack((X_tab.iloc[idx_train].drop(columns=numeric_cols).values, X_tab_train))
-    X_tab_val_full = np.hstack((X_tab.iloc[idx_val].drop(columns=numeric_cols).values, X_tab_val))
-    X_tab_test_full = np.hstack((X_tab.iloc[idx_test].drop(columns=numeric_cols).values, X_tab_test))
-    
-    return (X_tab_train_full, X_text[idx_train]), (X_tab_val_full, X_text[idx_val]), (X_tab_test_full, X_text[idx_test]), y[idx_train], y[idx_val], y[idx_test]
+dagshub.init(repo_owner="MennaSherieff", repo_name="Churn-analysis-", mlflow=True)
 
-def build_multimodal_nn(tabular_shape, max_tokens=5000, output_sequence_length=100):
-    # 1. Branch A: Tabular Input
-    tabular_input = layers.Input(shape=(tabular_shape,), name="tabular_input")
-    tab_dense = layers.Dense(32, activation="relu")(tabular_input)
-    tab_dense = layers.BatchNormalization()(tab_dense)
-    tab_dense = layers.Dropout(0.3)(tab_dense)
-    
-    # 2. Branch B: Raw Text Input
-    text_input = layers.Input(shape=(1,), dtype=tf.string, name="text_input")
-    
-    # Vectorize strings to integers tokens
-    vectorize_layer = layers.TextVectorization(max_tokens=max_tokens, output_sequence_length=output_sequence_length)
-    # Note: Simplification for script initialization: fit vectorizer internally or mock
-    
-    text_vect = vectorize_layer(text_input)
-    text_emb = layers.Embedding(input_dim=max_tokens, output_dim=16, input_length=output_sequence_length)(text_vect)
-    text_flat = layers.GlobalAveragePooling1D()(text_emb)
-    text_dense = layers.Dense(16, activation="relu")(text_flat)
-    
-    # 3. Fusion: Concatenate both feature representations
-    fused = layers.Concatenate()([tab_dense, text_dense])
-    
-    # 4. Final Classification Layers
-    fc = layers.Dense(16, activation="relu")(fused)
-    fc = layers.Dropout(0.2)(fc)
-    output = layers.Dense(1, activation="sigmoid", name="output")(fc)
-    
-    model = models.Model(inputs=[tabular_input, text_input], outputs=output)
-    
-    # Adapt vectorizer mapping logic placeholder (will handle during raw training runtime)
-    return model, vectorize_layer
+with open("params.yaml", "r") as f:
+    params = yaml.safe_load(f)
 
-def main():
-    train_data, val_data, test_data, y_train, y_val, y_test = load_and_prepare_nn_data()
-    X_tab_train, X_text_train = train_data
-    X_tab_val, X_text_val = val_data
+nn_params = params["train_nn"]
+
+LEARNING_RATE = nn_params["learning_rate"]
+EPOCHS = nn_params["epochs"]
+BATCH_SIZE = nn_params["batch_size"]
+
+TAB_DENSE = nn_params["architecture"]["tabular_dense"]
+FUSION_DENSE = nn_params["architecture"]["fusion_dense"]
+
+DROP_TAB = nn_params["dropout"]["tabular"]
+DROP_FUS = nn_params["dropout"]["fusion"]
+
+
+def load_processed_data():
+    """Load preprocessed data from prepare.py"""
+    processed_dir = "data/processed"
     
-    model, vectorize_layer = build_multimodal_nn(X_tab_train.shape[1])
+    X_train = pd.read_csv(os.path.join(processed_dir, "X_train.csv"))
+    X_val = pd.read_csv(os.path.join(processed_dir, "X_val.csv"))
+    X_test = pd.read_csv(os.path.join(processed_dir, "X_test.csv"))
     
-    # Adapt text vectorizer explicitly to our training corpus text
-    vectorize_layer.adapt(X_text_train)
+    y_train = pd.read_csv(os.path.join(processed_dir, "y_train.csv")).values.ravel()
+    y_val = pd.read_csv(os.path.join(processed_dir, "y_val.csv")).values.ravel()
+    y_test = pd.read_csv(os.path.join(processed_dir, "y_test.csv")).values.ravel()
     
-    model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
-        loss="binary_crossentropy",
-        metrics=["accuracy"]
-    )
+    # Convert to numpy arrays
+    X_train = X_train.values.astype(np.float32)
+    X_val = X_val.values.astype(np.float32)
+    X_test = X_test.values.astype(np.float32)
     
-    print("\nTraining Multimodal Neural Network...")
-    # Add class weighting because of data skew (73% non-churn, 27% churn)
-    class_weights = {0: 1.0, 1: 2.7}
+    print(f"Loaded data shapes:")
+    print(f"X_train: {X_train.shape}, y_train: {y_train.shape}")
+    print(f"X_val: {X_val.shape}, y_val: {y_val.shape}")
+    print(f"X_test: {X_test.shape}, y_test: {y_test.shape}")
     
-    model.fit(
-        x={"tabular_input": X_tab_train, "text_input": X_text_train},
-        y=y_train,
-        validation_data=({"tabular_input": X_tab_val, "text_input": X_text_val}, y_val),
-        epochs=15,
-        batch_size=32,
-        class_weight=class_weights,
-        verbose=1
-    )
+    return X_train, X_val, X_test, y_train, y_val, y_test
+
+
+def build_model(input_dim):
+    inp = layers.Input(shape=(input_dim,))
     
-    # Evaluate
-    probs = model.predict({"tabular_input": X_tab_val, "text_input": X_text_val}).flatten()
+    x = layers.Dense(TAB_DENSE, activation="relu")(inp)
+    x = layers.BatchNormalization()(x)
+    x = layers.Dropout(DROP_TAB)(x)
+    
+    x = layers.Dense(FUSION_DENSE, activation="relu")(x)
+    x = layers.Dropout(DROP_FUS)(x)
+    
+    out = layers.Dense(1, activation="sigmoid")(x)
+    
+    model = models.Model(inputs=inp, outputs=out)
+    
+    return model
+
+
+def evaluate(model, X, y):
+    probs = model.predict(X).ravel()
     preds = (probs > 0.5).astype(int)
     
-    print("\n=================== NEURAL NETWORK PERFORMANCE (VAL) =================== ")
-    print(f"Accuracy : {accuracy_score(y_val, preds):.4f}")
-    print(f"Precision: {precision_score(y_val, preds):.4f}")
-    print(f"Recall   : {recall_score(y_val, preds):.4f}")
-    print(f"F1-Score : {f1_score(y_val, preds):.4f}")
-    print(f"ROC-AUC  : {roc_auc_score(y_val, probs):.4f}")
-    print("=========================================================================\n")
+    return {
+        "accuracy": accuracy_score(y, preds),
+        "precision": precision_score(y, preds),
+        "recall": recall_score(y, preds),
+        "f1_score": f1_score(y, preds),
+        "roc_auc": roc_auc_score(y, probs)
+    }
+
+
+def main():
+    X_train, X_val, X_test, y_train, y_val, y_test = load_processed_data()
     
-    # Save the deep model configuration
-    os.makedirs("models", exist_ok=True)
-    model.save("models/multimodal_nn_model.keras")
-    print("Neural network saved successfully to models/multimodal_nn_model.keras")
+    with mlflow.start_run():
+        
+        model = build_model(X_train.shape[1])
+        
+        model.compile(
+            optimizer=tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE),
+            loss="binary_crossentropy",
+            metrics=["accuracy"]
+        )
+        
+        early = tf.keras.callbacks.EarlyStopping(
+            monitor="val_loss",
+            patience=3,
+            restore_best_weights=True
+        )
+        
+        model.fit(
+            X_train,
+            y_train,
+            validation_data=(X_val, y_val),
+            epochs=EPOCHS,
+            batch_size=BATCH_SIZE,
+            callbacks=[early],
+            verbose=1
+        )
+        
+        metrics = evaluate(model, X_test, y_test)
+        
+        print("\nNeural Network Test Metrics:")
+        print(metrics)
+        
+        mlflow.log_metrics(metrics)
+        
+        os.makedirs("models", exist_ok=True)
+        model_path = "models/multimodal_nn_model.keras"
+        model.save(model_path)
+        
+        with open("metrics.json", "w") as f:
+            json.dump(metrics, f, indent=4)
+        
+        mlflow.log_artifact(model_path)
+        mlflow.log_artifact("metrics.json")
+
 
 if __name__ == "__main__":
     main()

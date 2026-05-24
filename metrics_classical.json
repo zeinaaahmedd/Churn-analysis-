@@ -1,0 +1,32 @@
+{
+    "Accuracy":{
+        "Logistic Regression":0.8881516588,
+        "Decision Tree":0.863507109,
+        "Random Forest":0.8985781991,
+        "XGBoost":0.8985781991
+    },
+    "Precision":{
+        "Logistic Regression":0.8122605364,
+        "Decision Tree":0.8099547511,
+        "Random Forest":0.8686440678,
+        "XGBoost":0.848
+    },
+    "Recall":{
+        "Logistic Regression":0.7544483986,
+        "Decision Tree":0.6370106762,
+        "Random Forest":0.7295373665,
+        "XGBoost":0.7544483986
+    },
+    "F1-Score":{
+        "Logistic Regression":0.7822878229,
+        "Decision Tree":0.7131474104,
+        "Random Forest":0.7930367505,
+        "XGBoost":0.7984934087
+    },
+    "ROC-AUC":{
+        "Logistic Regression":0.9393132684,
+        "Decision Tree":0.9064640864,
+        "Random Forest":0.9337361031,
+        "XGBoost":0.9367017021
+    }
+}

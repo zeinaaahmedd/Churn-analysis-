@@ -1,0 +1,6 @@
+[core]
+    remote = dagshub
+['remote "dagshub"']
+    url = https://dagshub.com/MennaSherieff/Churn-analysis-.dvc
+    user = NoureldinAyman
+    password = 4f4371b5ca399a128c322327e776fbb8b86d637e

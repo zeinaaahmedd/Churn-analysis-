@@ -4,82 +4,173 @@ import pandas as pd
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
 from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.ensemble import RandomForestClassifier
+from xgboost import XGBClassifier
 import tensorflow as tf
+import yaml
 
-def load_test_split_data():
-    raw_data_path = "data/raw/telco_prep.csv"
-    df = pd.read_csv(raw_data_path)
+# Load parameters
+with open("params.yaml", "r") as f:
+    params = yaml.safe_load(f)
+
+train_params = params["train"]
+
+def load_processed_test_data():
+    """Load the preprocessed test data from prepare.py"""
+    processed_dir = "data/processed"
     
-    df['CustomerFeedback'] = df['CustomerFeedback'].fillna('').astype(str)
-    y = df['Churn'].values
+    # Load the test sets that were saved by prepare.py
+    X_test = pd.read_csv(os.path.join(processed_dir, "X_test.csv"))
+    y_test = pd.read_csv(os.path.join(processed_dir, "y_test.csv")).values.ravel()
     
-    cols_to_drop = ['Unnamed: 0', 'customerID', 'PromptInput', 'CustomerFeedback', 'Churn', 'feedback_length', 'sentiment']
-    X_tab = df.drop(columns=[col for col in cols_to_drop if col in df.columns])
+    # Load training data for the baseline models
+    X_train = pd.read_csv(os.path.join(processed_dir, "X_train.csv"))
+    y_train = pd.read_csv(os.path.join(processed_dir, "y_train.csv")).values.ravel()
     
-    numeric_cols = X_tab.select_dtypes(include=['int64', 'float64']).columns.tolist()
-    categorical_cols = X_tab.select_dtypes(include=['object']).columns.tolist()
+    # Convert to numpy arrays
+    X_train = X_train.values.astype(np.float32)
+    X_test = X_test.values.astype(np.float32)
     
-    le = LabelEncoder()
-    for col in categorical_cols:
-        X_tab[col] = le.fit_transform(X_tab[col].astype(str))
-        
-    idx_train, idx_temp = train_test_split(np.arange(len(df)), test_size=0.30, random_state=42, stratify=y)
-    idx_val, idx_test = train_test_split(idx_temp, test_size=0.50, random_state=42, stratify=y[idx_temp])
+    print(f"Training data shape: {X_train.shape}")
+    print(f"Test data shape: {X_test.shape}")
+    print(f"Training samples: {len(y_train)}, Test samples: {len(y_test)}")
     
-    scaler = StandardScaler()
-    X_tab_train = scaler.fit_transform(X_tab.iloc[idx_train][numeric_cols])
-    X_tab_test_full = np.hstack((X_tab.iloc[idx_test].drop(columns=numeric_cols).values, scaler.transform(X_tab.iloc[idx_test][numeric_cols])))
-    X_tab_train_full = np.hstack((X_tab.iloc[idx_train].drop(columns=numeric_cols).values, X_tab_train))
-    
-    X_text_test = df['CustomerFeedback'].values[idx_test]
-    y_test = y[idx_test]
-    
-    return X_tab_train_full, X_tab_test_full, X_text_test, y[idx_train], y_test
+    return X_train, X_test, y_train, y_test
 
 def main():
-    X_train_tab, X_test_tab, X_text_test, y_train, y_test = load_test_split_data()
+    X_train, X_test, y_train, y_test = load_processed_test_data()
     results = {}
 
+    print("EVALUATING ON HELD-OUT TEST SET")
+
     # 1. Baseline Logistic Regression
-    lr = LogisticRegression(max_iter=1000, random_state=42).fit(X_train_tab, y_train)
-    results["Logistic Regression"] = [
-        accuracy_score(y_test, lr.predict(X_test_tab)),
-        precision_score(y_test, lr.predict(X_test_tab)),
-        recall_score(y_test, lr.predict(X_test_tab)),
-        f1_score(y_test, lr.predict(X_test_tab)),
-        roc_auc_score(y_test, lr.predict_proba(X_test_tab)[:, 1])
-    ]
-
-    # 2. Baseline Decision Tree
-    dt = DecisionTreeClassifier(max_depth=5, random_state=42).fit(X_train_tab, y_train)
-    results["Decision Tree"] = [
-        accuracy_score(y_test, dt.predict(X_test_tab)),
-        precision_score(y_test, dt.predict(X_test_tab)),
-        recall_score(y_test, dt.predict(X_test_tab)),
-        f1_score(y_test, dt.predict(X_test_tab)),
-        roc_auc_score(y_test, dt.predict_proba(X_test_tab)[:, 1])
-    ]
-
-    # 3. Multimodal Neural Network
-    nn_model = tf.keras.models.load_model("models/multimodal_nn_model.keras")
-    probs_nn = nn_model.predict({"tabular_input": X_test_tab, "text_input": X_text_test}).flatten()
-    preds_nn = (probs_nn > 0.5).astype(int)
-    results["Neural Network"] = [
-        accuracy_score(y_test, preds_nn),
-        precision_score(y_test, preds_nn),
-        recall_score(y_test, preds_nn),
-        f1_score(y_test, preds_nn),
-        roc_auc_score(y_test, probs_nn)
-    ]
-
-    metrics_df = pd.DataFrame(results, index=["Accuracy", "Precision", "Recall", "F1-Score", "ROC-AUC"]).T
-    print("\n=================== UNBIASED HELD-OUT TEST SPLIT RESULTS ===================")
-    print(metrics_df.round(4))
-    print("============================================================================\n")
+    print("\nTraining Logistic Regression...")
+    lr = LogisticRegression(
+        max_iter=train_params["logistic_regression"]["max_iter"],
+        random_state=42
+    )
+    lr.fit(X_train, y_train)
     
+    lr_preds = lr.predict(X_test)
+    lr_probs = lr.predict_proba(X_test)[:, 1]
+    
+    results["Logistic Regression"] = [
+        accuracy_score(y_test, lr_preds),
+        precision_score(y_test, lr_preds),
+        recall_score(y_test, lr_preds),
+        f1_score(y_test, lr_preds),
+        roc_auc_score(y_test, lr_probs)
+    ]
+    print(f"Logistic Regression - Accuracy: {results['Logistic Regression'][0]:.4f}")
+
+    # 2. Decision Tree
+    print("\nTraining Decision Tree...")
+    dt = DecisionTreeClassifier(
+        max_depth=train_params["decision_tree"]["max_depth"],
+        random_state=42
+    )
+    dt.fit(X_train, y_train)
+    
+    dt_preds = dt.predict(X_test)
+    dt_probs = dt.predict_proba(X_test)[:, 1]
+    
+    results["Decision Tree"] = [
+        accuracy_score(y_test, dt_preds),
+        precision_score(y_test, dt_preds),
+        recall_score(y_test, dt_preds),
+        f1_score(y_test, dt_preds),
+        roc_auc_score(y_test, dt_probs)
+    ]
+    print(f"Decision Tree - Accuracy: {results['Decision Tree'][0]:.4f}")
+
+    # 3. Random Forest
+    print("\nTraining Random Forest...")
+    rf = RandomForestClassifier(
+        n_estimators=train_params["random_forest"]["n_estimators"],
+        max_depth=train_params["random_forest"]["max_depth"],
+        random_state=train_params["random_forest"]["random_state"]
+    )
+    rf.fit(X_train, y_train)
+    
+    rf_preds = rf.predict(X_test)
+    rf_probs = rf.predict_proba(X_test)[:, 1]
+    
+    results["Random Forest"] = [
+        accuracy_score(y_test, rf_preds),
+        precision_score(y_test, rf_preds),
+        recall_score(y_test, rf_preds),
+        f1_score(y_test, rf_preds),
+        roc_auc_score(y_test, rf_probs)
+    ]
+    print(f"Random Forest - Accuracy: {results['Random Forest'][0]:.4f}")
+
+    # 4. XGBoost
+    print("\nTraining XGBoost...")
+    xgb = XGBClassifier(
+        n_estimators=train_params["xgboost"]["n_estimators"],
+        learning_rate=train_params["xgboost"]["learning_rate"],
+        max_depth=train_params["xgboost"]["max_depth"],
+        random_state=train_params["xgboost"]["random_state"],
+        eval_metric="logloss"
+    )
+    xgb.fit(X_train, y_train)
+    
+    xgb_preds = xgb.predict(X_test)
+    xgb_probs = xgb.predict_proba(X_test)[:, 1]
+    
+    results["XGBoost"] = [
+        accuracy_score(y_test, xgb_preds),
+        precision_score(y_test, xgb_preds),
+        recall_score(y_test, xgb_preds),
+        f1_score(y_test, xgb_preds),
+        roc_auc_score(y_test, xgb_probs)
+    ]
+    print(f"XGBoost - Accuracy: {results['XGBoost'][0]:.4f}")
+
+    # 5. Neural Network
+    print("\nLoading Neural Network...")
+    nn_model = tf.keras.models.load_model("models/multimodal_nn_model.keras")
+    
+    # Get the expected input shape
+    expected_shape = nn_model.input_shape
+    print(f"Model expects input shape: {expected_shape}")
+    print(f"Actual test data shape: {X_test.shape}")
+    
+    # Make predictions
+    nn_probs = nn_model.predict(X_test).flatten()
+    nn_preds = (nn_probs > 0.5).astype(int)
+    
+    results["Neural Network"] = [
+        accuracy_score(y_test, nn_preds),
+        precision_score(y_test, nn_preds),
+        recall_score(y_test, nn_preds),
+        f1_score(y_test, nn_preds),
+        roc_auc_score(y_test, nn_probs)
+    ]
+    print(f"Neural Network - Accuracy: {results['Neural Network'][0]:.4f}")
+
+    # Create results dataframe
+    metrics_df = pd.DataFrame(
+        results, 
+        index=["Accuracy", "Precision", "Recall", "F1-Score", "ROC-AUC"]
+    ).T
+    
+    print("FINAL MODEL COMPARISON ON HELD-OUT TEST SET")
+    print(metrics_df.round(4))
+    
+    # Find the best model based on F1-Score
+    metrics_df["Score"] = (
+        0.5 * metrics_df["F1-Score"] +
+        0.3 * metrics_df["ROC-AUC"] +
+        0.2 * metrics_df["Recall"]
+    )
+    best_model = metrics_df["Score"].idxmax()
+    print(f"\nBest Model: {best_model} with Score: {metrics_df.loc[best_model, 'Score']:.4f}")
+    
+    # Save results
+    os.makedirs("plots", exist_ok=True)
     metrics_df.to_csv("plots/final_test_metrics.csv")
+    print("\nResults saved to: plots/final_test_metrics.csv")
 
 if __name__ == "__main__":
     main()
