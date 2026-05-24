@@ -339,6 +339,10 @@ Generated artifacts include:
 
 The inference service is built with FastAPI and serves the best-performing XGBoost model.
 
+## Web Interface
+
+Open the root page at `/` to use the browser interface. It renders the customer input form directly from the saved feature encoders and posts the payload to `/predict`.
+
 ## Running locally
 
 ```bash
@@ -347,12 +351,15 @@ uvicorn app.main:app --reload --port 8000
 
 Interactive docs are available at `http://localhost:8000/docs`.
 
-## Running with Docker
+## Deploy on Render
 
-```bash
-docker build -t churn-api .
-docker run -p 8000:8000 churn-api
-```
+This repository includes a Render blueprint in [render.yaml](render.yaml). Render will install [requirements.txt](requirements.txt), run the FastAPI app with the `PORT` provided by Render, and expose the interface at `/`.
+
+The key endpoints are:
+
+* `/` - browser UI
+* `/health` - health check for Render
+* `/predict` - JSON prediction API
 
 ## GET /health
 
