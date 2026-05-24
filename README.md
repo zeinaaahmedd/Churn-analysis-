@@ -154,16 +154,22 @@ Each model run is logged separately for full reproducibility.
 ```
 Churn-analysis/
 │
+├── app/
+│   └── main.py                  # FastAPI inference service
+│
 ├── data/
 │   ├── raw/
 │   └── processed/
 │
 ├── models/
-│   ├── decision_tree.pkl
-│   ├── logestic_regression.pkl
-│   ├── random_forest.pkl
 │   ├── xgboost.pkl
-│   └── multimodal_nn_model.keras
+│   ├── random_forest.pkl
+│   ├── logistic_regression.pkl
+│   ├── decision_tree.pkl
+│   ├── multimodal_nn_model.keras
+│   ├── label_encoders.pkl       # categorical encoders for inference
+│   ├── scaler.pkl               # feature scaler for inference
+│   └── feature_columns.pkl     # expected column order for inference
 │
 ├── plots/
 │   ├── model_comparison_matrix.png
@@ -181,6 +187,8 @@ Churn-analysis/
 ├── dvc.lock
 ├── params.yaml
 ├── metrics.json
+├── requirements.txt
+├── Dockerfile
 └── README.md
 ```
 
@@ -242,6 +250,9 @@ Final evaluation compares all models on a **held-out test set**.
 * MLflow
 * DagsHub
 * DVC
+* FastAPI
+* Uvicorn
+* Docker
 
 ---
 
@@ -366,25 +377,27 @@ curl -X POST http://localhost:8000/predict \
   -H "Content-Type: application/json" \
   -d '{
     "features": {
-      "gender": "Female",
+      "gender": "female",
       "SeniorCitizen": 0,
-      "Partner": "Yes",
-      "Dependents": "No",
+      "Partner": "yes",
+      "Dependents": "no",
       "tenure": 12,
-      "PhoneService": "Yes",
-      "MultipleLines": "No",
-      "InternetService": "Fiber optic",
-      "OnlineSecurity": "No",
-      "OnlineBackup": "No",
-      "DeviceProtection": "No",
-      "TechSupport": "No",
-      "StreamingTV": "Yes",
-      "StreamingMovies": "Yes",
-      "Contract": "Month-to-month",
-      "PaperlessBilling": "Yes",
-      "PaymentMethod": "Electronic check",
+      "PhoneService": "yes",
+      "MultipleLines": "no",
+      "InternetService": "fiber optic",
+      "OnlineSecurity": "no",
+      "OnlineBackup": "no",
+      "DeviceProtection": "no",
+      "TechSupport": "no",
+      "StreamingTV": "yes",
+      "StreamingMovies": "yes",
+      "Contract": "month-to-month",
+      "PaperlessBilling": "yes",
+      "PaymentMethod": "electronic check",
       "MonthlyCharges": 70.35,
-      "TotalCharges": 844.20
+      "TotalCharges": 844.20,
+      "feedback_length": 120,
+      "sentiment": -0.25
     }
   }'
 ```
