@@ -377,8 +377,8 @@ docker build -t churn-analysis .
 
 ```bash
 az login
-az group create --name churn-rg --location eastus
-az acr create --resource-group churn-rg --name <your-acr-name> --sku Basic
+az group create --name churn-analysis --location uaenorth
+az acr create --resource-group churn-analysis --name <your-acr-name> --sku Basic
 az acr login --name <your-acr-name>
 docker tag churn-analysis <your-acr-name>.azurecr.io/churn-analysis:latest
 docker push <your-acr-name>.azurecr.io/churn-analysis:latest
@@ -404,19 +404,6 @@ curl https://churnanalysis.whitedesert-71f6c6f8.uaenorth.azurecontainerapps.io/h
 ```bash
 docker run -p 8000:8000 churn-analysis
 ```
-
-### Notes
-
-The app exposes `/health`, `/predict`, `/metrics`, `/stats`, and `/system`.
-
-The key endpoints are:
-
-* `/` - browser UI
-* `/health` - health check for the service
-* `/predict` - JSON prediction API
-* `/metrics` - Prometheus-style runtime metrics for latency, throughput, and error rate
-* `/stats` - simple model-level summary of prediction volume and class balance
-* `/system` - CPU and memory usage for the running process
 
 ## GET /health
 
