@@ -351,9 +351,21 @@ uvicorn app.main:app --reload --port 8000
 
 Interactive docs are available at `http://localhost:8000/docs`.
 
-## Deploying on Azure
+# Deploying on Microsoft Azure
 
-This repository is ready for Azure Kubernetes Service (AKS).
+This repository is deployed as a containerized FastAPI app on **Azure Container Apps**.
+
+Live app URL:
+
+```text
+https://churnanalysis.whitedesert-71f6c6f8.uaenorth.azurecontainerapps.io/
+```
+
+Health check URL:
+
+```text
+https://churnanalysis.whitedesert-71f6c6f8.uaenorth.azurecontainerapps.io/health
+```
 
 ### 1. Build the Docker image
 
@@ -372,30 +384,22 @@ docker tag churn-analysis <your-acr-name>.azurecr.io/churn-analysis:latest
 docker push <your-acr-name>.azurecr.io/churn-analysis:latest
 ```
 
-### 3. Create AKS and connect kubectl
+### 3. Create the Azure Container Apps environment and app
 
 ```bash
-az aks create --resource-group churn-rg --name churn-aks --node-count 2 --enable-managed-identity --attach-acr <your-acr-name>
-az aks get-credentials --resource-group churn-rg --name churn-aks
+az containerapp env create --name env-churn --resource-group churn-analysis --location uaenorth --logs-workspace-id <log-analytics-customer-id> --logs-workspace-key <log-analytics-primary-key>
+az containerapp create --name churnanalysis --resource-group churn-analysis --environment env-churn --image churnanalysis.azurecr.io/churn-analysis:latest --registry-server churnanalysis.azurecr.io --ingress external --target-port 8000
 ```
 
-### 4. Deploy the service
+### 4. Open the public endpoint
 
-Apply the Azure AKS manifests in [azure/aks/deployment.yaml](azure/aks/deployment.yaml) and [azure/aks/service.yaml](azure/aks/service.yaml).
-
-Before applying, replace `<your-acr-name>` in [azure/aks/deployment.yaml](azure/aks/deployment.yaml) with your real Azure Container Registry name.
+Open the Container App URL listed above. The root route `/` is the GUI, and the service also exposes `/health`, `/predict`, `/metrics`, `/stats`, and `/system`.
 
 ```bash
-kubectl apply -f azure/aks/deployment.yaml
-kubectl apply -f azure/aks/service.yaml
-kubectl get svc churn-analysis
+curl https://churnanalysis.whitedesert-71f6c6f8.uaenorth.azurecontainerapps.io/health
 ```
 
-### 5. Open the public endpoint
-
-When the `EXTERNAL-IP` appears, open it in the browser. The root route `/` is the UI, and the service also exposes `/health`, `/predict`, `/metrics`, `/stats`, and `/system`.
-
-### Optional local Docker test
+### 5. Optional local Docker test
 
 ```bash
 docker run -p 8000:8000 churn-analysis
