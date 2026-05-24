@@ -1,9 +1,29 @@
 import os
+from pyexpat import model
 import pandas as pd
 import numpy as np
+import json
+import yaml
+import dagshub
+import joblib
+import mlflow
 from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
+from xgboost import XGBClassifier
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
+
+dagshub.init(
+    repo_owner='MennaSherieff',
+    repo_name='Churn-analysis-',
+    mlflow=True
+)
+
+mlflow.set_experiment("Classical_Model_Experiments")
+with open("params.yaml", "r") as f:
+    params = yaml.safe_load(f)
+
+train_params = params["train"]
 
 def load_processed_data():
     processed_dir = "data/processed"
@@ -30,21 +50,60 @@ def main():
     # Load data splits
     X_train, X_val, y_train, y_val = load_processed_data()
     
-    # 1. Initialize Baseline 1: Logistic Regression
-    lr_model = LogisticRegression(max_iter=1000, random_state=42)
-    lr_model.fit(X_train, y_train)
-    lr_metrics = evaluate_model(lr_model, X_val, y_val)
+    models = {
+        "Logistic Regression": LogisticRegression(
+            max_iter=train_params["logistic_regression"]["max_iter"],
+            random_state=42
+        ),
+
+        "Decision Tree": DecisionTreeClassifier(
+            max_depth=train_params["decision_tree"]["max_depth"],
+            random_state=42
+        ),
+
+        "Random Forest": RandomForestClassifier(
+            n_estimators=train_params["random_forest"]["n_estimators"],
+            max_depth=train_params["random_forest"]["max_depth"],
+            random_state=train_params["random_forest"]["random_state"]
+        ),
+
+        "XGBoost": XGBClassifier(
+            n_estimators=train_params["xgboost"]["n_estimators"],
+            learning_rate=train_params["xgboost"]["learning_rate"],
+            max_depth=train_params["xgboost"]["max_depth"],
+            random_state=train_params["xgboost"]["random_state"],
+            eval_metric="logloss"
+        )
+    }
+    all_metrics = {}
+
+    for model_name, model in models.items():
+
+        print(f"\nTraining {model_name}...")
+
+        with mlflow.start_run(run_name=model_name):
+
+            model.fit(X_train, y_train)
+
+            metrics = evaluate_model(model, X_val, y_val)
+
+            all_metrics[model_name] = metrics
+
+            mlflow.log_params(model.get_params())
+            mlflow.log_metrics(metrics)
+            
+            model_path = f"models/{model_name.replace(' ', '_').lower()}.pkl"
+            joblib.dump(model, model_path)
+
+            mlflow.log_artifact(model_path)
     
-    # 2. Initialize Baseline 2: Decision Tree
-    dt_model = DecisionTreeClassifier(max_depth=5, random_state=42) # depth limited to avoid heavy overfitting
-    dt_model.fit(X_train, y_train)
-    dt_metrics = evaluate_model(dt_model, X_val, y_val)
-    
-    # Print Results Side-by-Side
-    print("\n=================== BASELINE MODEL COMPARISON ===================")
-    metrics_df = pd.DataFrame([lr_metrics, dt_metrics], index=["Logistic Regression", "Decision Tree"])
+    metrics_df = pd.DataFrame(all_metrics).T
+
     print(metrics_df.round(4))
-    print("=================================================================\n")
+
+    metrics_df.to_json("metrics_classical.json", indent=4)
+
+    mlflow.log_artifact("metrics_classical.json")
 
 if __name__ == "__main__":
     main()

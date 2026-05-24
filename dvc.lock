@@ -11,6 +11,12 @@ stages:
       hash: md5
       md5: dd503e2b08e33c28e8546be7543d255f
       size: 3532
+    params:
+      params.yaml:
+        prepare:
+          test_size: 0.3
+          val_size: 0.5
+          random_state: 42
     outs:
     - path: data/processed/X_test.csv
       hash: md5
@@ -57,8 +63,24 @@ stages:
       size: 3172
     - path: src/train.py
       hash: md5
-      md5: 6fce73a99d67db8a6fbb006b0fd29341
-      size: 2046
+      md5: c97de0a5443827858589988697bd326d
+      size: 3459
+    params:
+      params.yaml:
+        train:
+          logistic_regression:
+            max_iter: 1000
+          decision_tree:
+            max_depth: 5
+          random_forest:
+            n_estimators: 200
+            max_depth: 10
+            random_state: 42
+          xgboost:
+            n_estimators: 200
+            learning_rate: 0.05
+            max_depth: 6
+            random_state: 42
   train_nn:
     cmd: python src/train_nn.py
     deps:
@@ -68,46 +90,70 @@ stages:
       size: 5816428
     - path: src/train_nn.py
       hash: md5
-      md5: 3b44a861cb8d34dfb2972420c00fdbc6
-      size: 5831
+      md5: 0f775d39ee1d807cf575e18f5a883914
+      size: 4046
+    params:
+      params.yaml:
+        train_nn:
+          learning_rate: 0.001
+          epochs: 15
+          batch_size: 32
+          class_weights:
+            churn_0: 1.0
+            churn_1: 2.7
+          text:
+            max_tokens: 5000
+            output_sequence_length: 100
+            embedding_dim: 16
+          architecture:
+            tabular_dense: 32
+            text_dense: 16
+            fusion_dense: 16
+          dropout:
+            tabular: 0.3
+            fusion: 0.2
     outs:
+    - path: metrics.json
+      hash: md5
+      md5: 9113d749d10c74551c5ac00e90bc0fa3
+      size: 186
     - path: models/multimodal_nn_model.keras
       hash: md5
-      md5: c11d33bb30333d85777f48821056e3e4
-      size: 1080505
+      md5: a50f3f01647abf13e15de0730eadce1d
+      size: 54545
   visualize:
     cmd: python src/evaluate_and_plot.py
     deps:
     - path: models/multimodal_nn_model.keras
       hash: md5
-      md5: c11d33bb30333d85777f48821056e3e4
-      size: 1080505
+      md5: a50f3f01647abf13e15de0730eadce1d
+      size: 54545
     - path: src/evaluate_and_plot.py
       hash: md5
-      md5: 5b1f01884a61d8ea65f4cc49f02fe7db
-      size: 5582
+      md5: 1668240be44b0c85704b152b1c716029
+      size: 6677
     outs:
     - path: plots/data_sentiment_distribution.png
       hash: md5
-      md5: 2b2dea9aa128d483a8e6a297e08adf4c
-      size: 170072
+      md5: f6fec2a319295a70d77fea15f5e6be01
+      size: 32568
     - path: plots/model_comparison_matrix.png
       hash: md5
-      md5: c1b5c9f45f97b0fb0e5722d1fa51c1cf
-      size: 129605
+      md5: 00dcf21049553a101b5248eac4e754ae
+      size: 22346
   test_evaluation:
     cmd: python src/final_test_evaluation.py
     deps:
     - path: models/multimodal_nn_model.keras
       hash: md5
-      md5: c11d33bb30333d85777f48821056e3e4
-      size: 1080505
+      md5: a50f3f01647abf13e15de0730eadce1d
+      size: 54545
     - path: src/final_test_evaluation.py
       hash: md5
-      md5: 04a6b525a5e83ee143434f94b6c4985a
-      size: 3878
+      md5: 5bca8b51bf7d7e2c6bb52cc3e123b6b8
+      size: 6101
     outs:
     - path: plots/final_test_metrics.csv
       hash: md5
-      md5: 3d660528e24a1dfaacc2476e1f6505da
-      size: 293
+      md5: 84dda304e65781d458819245a9a17627
+      size: 666

@@ -2,42 +2,54 @@ stages:
   prepare:
     cmd: python src/prepare.py
     deps:
-    - data/raw/telco_prep.csv
-    - src/prepare.py
+      - data/raw/telco_prep.csv
+      - src/prepare.py
+    params:
+      - prepare
     outs:
-    - data/processed/X_test.csv
-    - data/processed/X_train.csv
-    - data/processed/X_val.csv
-    - data/processed/y_test.csv
-    - data/processed/y_train.csv
-    - data/processed/y_val.csv
+      - data/processed/X_test.csv
+      - data/processed/X_train.csv
+      - data/processed/X_val.csv
+      - data/processed/y_test.csv
+      - data/processed/y_train.csv
+      - data/processed/y_val.csv
+
   train:
     cmd: python src/train.py
     deps:
-    - data/processed/X_train.csv
-    - data/processed/X_val.csv
-    - data/processed/y_train.csv
-    - data/processed/y_val.csv
-    - src/train.py
+      - data/processed/X_train.csv
+      - data/processed/X_val.csv
+      - data/processed/y_train.csv
+      - data/processed/y_val.csv
+      - src/train.py
+    params:
+      - train
+
   train_nn:
     cmd: python src/train_nn.py
     deps:
-    - data/raw/telco_prep.csv
-    - src/train_nn.py
+      - data/raw/telco_prep.csv
+      - src/train_nn.py
+    params:
+      - train_nn
+    metrics:
+      - metrics.json
     outs:
-    - models/multimodal_nn_model.keras
+      - models/multimodal_nn_model.keras
+
   visualize:
     cmd: python src/evaluate_and_plot.py
     deps:
-    - models/multimodal_nn_model.keras
-    - src/evaluate_and_plot.py
+      - models/multimodal_nn_model.keras
+      - src/evaluate_and_plot.py
     outs:
-    - plots/data_sentiment_distribution.png
-    - plots/model_comparison_matrix.png
+      - plots/data_sentiment_distribution.png
+      - plots/model_comparison_matrix.png
+
   test_evaluation:
     cmd: python src/final_test_evaluation.py
     deps:
-    - models/multimodal_nn_model.keras
-    - src/final_test_evaluation.py
+      - models/multimodal_nn_model.keras
+      - src/final_test_evaluation.py
     outs:
-    - plots/final_test_metrics.csv
+      - plots/final_test_metrics.csv

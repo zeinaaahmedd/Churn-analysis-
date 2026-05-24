@@ -1,0 +1,47 @@
+# params.yaml
+
+prepare:
+  test_size: 0.30
+  val_size: 0.50
+  random_state: 42
+
+train:
+  logistic_regression:
+    max_iter: 1000
+
+  decision_tree:
+    max_depth: 5
+
+  random_forest:
+    n_estimators: 200
+    max_depth: 10
+    random_state: 42
+
+  xgboost:
+    n_estimators: 200
+    learning_rate: 0.05
+    max_depth: 6
+    random_state: 42
+
+train_nn:
+  learning_rate: 0.001
+  epochs: 15
+  batch_size: 32
+
+  class_weights:
+    churn_0: 1.0
+    churn_1: 2.7
+
+  text:
+    max_tokens: 5000
+    output_sequence_length: 100
+    embedding_dim: 16
+
+  architecture:
+    tabular_dense: 32
+    text_dense: 16
+    fusion_dense: 16
+
+  dropout:
+    tabular: 0.3
+    fusion: 0.2
