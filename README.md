@@ -317,12 +317,86 @@ Generated artifacts include:
 
 # Future Improvements
 
-Planned upgrades:
-
-* [ ] Add FastAPI deployment layer
-* [ ] Dockerize full pipeline
+* [x] Add FastAPI deployment layer
+* [x] Dockerize inference service
 * [ ] Deploy model as API service
 * [ ] Add CI/CD pipeline for training automation
+
+---
+
+# API
+
+The inference service is built with FastAPI and serves the best-performing XGBoost model.
+
+## Running locally
+
+```bash
+uvicorn app.main:app --reload --port 8000
+```
+
+Interactive docs are available at `http://localhost:8000/docs`.
+
+## Running with Docker
+
+```bash
+docker build -t churn-api .
+docker run -p 8000:8000 churn-api
+```
+
+## GET /health
+
+Returns service liveness.
+
+```bash
+curl http://localhost:8000/health
+```
+
+Response:
+
+```json
+{"status": "ok"}
+```
+
+## POST /predict
+
+Accepts a raw customer record and returns a churn probability with a binary prediction.
+
+```bash
+curl -X POST http://localhost:8000/predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "features": {
+      "gender": "Female",
+      "SeniorCitizen": 0,
+      "Partner": "Yes",
+      "Dependents": "No",
+      "tenure": 12,
+      "PhoneService": "Yes",
+      "MultipleLines": "No",
+      "InternetService": "Fiber optic",
+      "OnlineSecurity": "No",
+      "OnlineBackup": "No",
+      "DeviceProtection": "No",
+      "TechSupport": "No",
+      "StreamingTV": "Yes",
+      "StreamingMovies": "Yes",
+      "Contract": "Month-to-month",
+      "PaperlessBilling": "Yes",
+      "PaymentMethod": "Electronic check",
+      "MonthlyCharges": 70.35,
+      "TotalCharges": 844.20
+    }
+  }'
+```
+
+Response:
+
+```json
+{"churn_probability": 0.8213, "prediction": 1}
+```
+
+**Error responses:**
+- `422` — a required field is missing, or a categorical field contains a value not seen during training.
 
 ---
 
