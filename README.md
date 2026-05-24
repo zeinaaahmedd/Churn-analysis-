@@ -330,7 +330,7 @@ Generated artifacts include:
 
 * [x] Add FastAPI deployment layer
 * [x] Dockerize inference service
-* [ ] Deploy model as API service
+* [x] Deploy model as API service
 * [ ] Add CI/CD pipeline for training automation
 
 ---
@@ -351,15 +351,68 @@ uvicorn app.main:app --reload --port 8000
 
 Interactive docs are available at `http://localhost:8000/docs`.
 
-## Deploy on Render
+## Deploying on Azure
 
-This repository includes a Render blueprint in [render.yaml](render.yaml). Render will install [requirements.txt](requirements.txt), run the FastAPI app with the `PORT` provided by Render, and expose the interface at `/`.
+This repository is ready for Azure Kubernetes Service (AKS).
+
+### 1. Build the Docker image
+
+```bash
+docker build -t churn-analysis .
+```
+
+### 2. Create an Azure Container Registry and push the image
+
+```bash
+az login
+az group create --name churn-rg --location eastus
+az acr create --resource-group churn-rg --name <your-acr-name> --sku Basic
+az acr login --name <your-acr-name>
+docker tag churn-analysis <your-acr-name>.azurecr.io/churn-analysis:latest
+docker push <your-acr-name>.azurecr.io/churn-analysis:latest
+```
+
+### 3. Create AKS and connect kubectl
+
+```bash
+az aks create --resource-group churn-rg --name churn-aks --node-count 2 --enable-managed-identity --attach-acr <your-acr-name>
+az aks get-credentials --resource-group churn-rg --name churn-aks
+```
+
+### 4. Deploy the service
+
+Apply the Azure AKS manifests in [azure/aks/deployment.yaml](azure/aks/deployment.yaml) and [azure/aks/service.yaml](azure/aks/service.yaml).
+
+Before applying, replace `<your-acr-name>` in [azure/aks/deployment.yaml](azure/aks/deployment.yaml) with your real Azure Container Registry name.
+
+```bash
+kubectl apply -f azure/aks/deployment.yaml
+kubectl apply -f azure/aks/service.yaml
+kubectl get svc churn-analysis
+```
+
+### 5. Open the public endpoint
+
+When the `EXTERNAL-IP` appears, open it in the browser. The root route `/` is the UI, and the service also exposes `/health`, `/predict`, `/metrics`, `/stats`, and `/system`.
+
+### Optional local Docker test
+
+```bash
+docker run -p 8000:8000 churn-analysis
+```
+
+### Notes
+
+The app exposes `/health`, `/predict`, `/metrics`, `/stats`, and `/system`.
 
 The key endpoints are:
 
 * `/` - browser UI
-* `/health` - health check for Render
+* `/health` - health check for the service
 * `/predict` - JSON prediction API
+* `/metrics` - Prometheus-style runtime metrics for latency, throughput, and error rate
+* `/stats` - simple model-level summary of prediction volume and class balance
+* `/system` - CPU and memory usage for the running process
 
 ## GET /health
 
@@ -417,6 +470,22 @@ Response:
 
 **Error responses:**
 - `422` — a required field is missing, or a categorical field contains a value not seen during training.
+
+## Monitoring
+
+The service exposes three lightweight operational views:
+
+* `/metrics` returns Prometheus-format application metrics, including request count, request latency, and in-flight requests.
+* `/stats` returns a JSON summary of cumulative churn predictions, positive/negative counts, positive rate, and average predicted probability.
+* `/system` returns current CPU and memory usage for the application process.
+
+Example calls:
+
+```bash
+curl http://localhost:8000/metrics
+curl http://localhost:8000/stats
+curl http://localhost:8000/system
+```
 
 ---
 

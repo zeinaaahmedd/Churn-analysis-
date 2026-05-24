@@ -1,18 +1,67 @@
 import json
+import os
+from threading import Lock
+from time import perf_counter
 from typing import Any, Dict
 
 import joblib
 import pandas as pd
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
+import psutil
 
 app = FastAPI(title="Churn Prediction API")
+PROCESS = psutil.Process(os.getpid())
+
+REQUEST_COUNT = Counter(
+    "churn_api_requests_total",
+    "Total HTTP requests received by the churn service",
+    ["method", "path", "status"],
+)
+REQUEST_LATENCY = Histogram(
+    "churn_api_request_duration_seconds",
+    "HTTP request duration in seconds",
+    ["method", "path"],
+)
+IN_FLIGHT_REQUESTS = Gauge(
+    "churn_api_in_flight_requests",
+    "Number of HTTP requests currently being processed",
+)
+PREDICTION_TOTAL = Counter(
+    "churn_predictions_total",
+    "Total churn predictions generated",
+)
+
+STATS_LOCK = Lock()
+PREDICTION_COUNTS = {"positive": 0, "negative": 0}
+PREDICTION_SUM = 0.0
 
 MODEL = joblib.load("models/xgboost.pkl")
 LABEL_ENCODERS = joblib.load("models/label_encoders.pkl")
 SCALER = joblib.load("models/scaler.pkl")
 FEATURE_COLS = joblib.load("models/feature_columns.pkl")
+
+
+@app.middleware("http")
+async def record_http_metrics(request, call_next):
+    start_time = perf_counter()
+    IN_FLIGHT_REQUESTS.inc()
+
+    try:
+        response = await call_next(request)
+    except Exception:
+        REQUEST_COUNT.labels(request.method, request.url.path, "500").inc()
+        raise
+    finally:
+        IN_FLIGHT_REQUESTS.dec()
+
+    duration = perf_counter() - start_time
+    REQUEST_LATENCY.labels(request.method, request.url.path).observe(duration)
+    REQUEST_COUNT.labels(request.method, request.url.path, str(response.status_code)).inc()
+    response.headers["X-Process-Time"] = f"{duration:.4f}"
+    return response
 
 NUMERIC_COLS = [column for column in FEATURE_COLS if column not in LABEL_ENCODERS]
 
@@ -181,8 +230,8 @@ def home() -> HTMLResponse:
         .hero {{
             display: grid;
             gap: 18px;
-            grid-template-columns: 1.3fr 0.7fr;
-            align-items: end;
+            grid-template-columns: 1fr;
+            align-items: start;
             margin-bottom: 22px;
         }}
 
@@ -215,29 +264,6 @@ def home() -> HTMLResponse:
             font-size: 1.05rem;
             line-height: 1.7;
         }}
-
-        .stats {{
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 14px;
-        }}
-
-        .stat {{
-            padding: 18px;
-            border: 1px solid var(--border);
-            border-radius: 20px;
-            background: rgba(255, 255, 255, 0.7);
-            box-shadow: var(--shadow);
-            backdrop-filter: blur(16px);
-        }}
-
-        .stat strong {{
-            display: block;
-            font-size: 1.7rem;
-            margin-bottom: 6px;
-        }}
-
-        .stat span {{ color: var(--muted); font-size: 0.95rem; }}
 
         .grid {{
             display: grid;
@@ -397,6 +423,98 @@ def home() -> HTMLResponse:
             top: 18px;
         }}
 
+        .monitoring-card {{
+            padding: 18px;
+            border-radius: 22px;
+            background: linear-gradient(180deg, rgba(14, 116, 144, 0.08), rgba(255, 255, 255, 0.94));
+            border: 1px solid rgba(14, 116, 144, 0.16);
+            display: grid;
+            gap: 14px;
+        }}
+
+        .monitoring-header {{
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+        }}
+
+        .monitoring-title {{
+            display: grid;
+            gap: 4px;
+        }}
+
+        .monitoring-title strong {{
+            font-size: 1rem;
+        }}
+
+        .monitoring-title span {{
+            font-size: 0.88rem;
+            color: var(--muted);
+        }}
+
+        .refresh-pill {{
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: rgba(15, 118, 110, 0.1);
+            color: var(--accent);
+            font-weight: 700;
+            font-size: 0.88rem;
+        }}
+
+        .monitor-grid {{
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }}
+
+        .mini-metric {{
+            padding: 12px;
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.88);
+            border: 1px solid rgba(19, 34, 56, 0.08);
+        }}
+
+        .mini-metric span {{
+            display: block;
+            font-size: 0.8rem;
+            color: var(--muted);
+            margin-bottom: 6px;
+        }}
+
+        .mini-metric strong {{
+            font-size: 1.1rem;
+        }}
+
+        .metric-list {{
+            display: grid;
+            gap: 10px;
+        }}
+
+        .metric-row {{
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            font-size: 0.86rem;
+            line-height: 1.4;
+            color: #304153;
+        }}
+
+        .metric-row span:first-child {{
+            color: var(--muted);
+        }}
+
+        .metric-panel {{
+            padding: 12px;
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.88);
+            border: 1px solid rgba(19, 34, 56, 0.08);
+        }}
+
         .result-card {{
             padding: 18px;
             border-radius: 22px;
@@ -457,14 +575,40 @@ def home() -> HTMLResponse:
             line-height: 1.6;
         }}
 
+        .status-dot {{
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }}
+
+        .status-dot::before {{
+            content: "";
+            width: 10px;
+            height: 10px;
+            border-radius: 999px;
+            background: #94a3b8;
+        }}
+
+        .status-dot.ok::before {{
+            background: #16a34a;
+        }}
+
+        .status-dot.warn::before {{
+            background: #d97706;
+        }}
+
+        .status-dot.error::before {{
+            background: #dc2626;
+        }}
+
         @media (max-width: 960px) {{
-            .hero, .grid {{ grid-template-columns: 1fr; }}
+            .grid {{ grid-template-columns: 1fr; }}
             .result {{ position: static; }}
         }}
 
         @media (max-width: 720px) {{
             .shell {{ width: min(100% - 20px, 1180px); padding-top: 18px; }}
-            .stats, .form-grid {{ grid-template-columns: 1fr; }}
+            .form-grid {{ grid-template-columns: 1fr; }}
             h1 {{ max-width: none; }}
         }}
     </style>
@@ -475,17 +619,7 @@ def home() -> HTMLResponse:
             <div>
                 <div class="eyebrow">Telco churn prediction interface</div>
                 <h1>Predict churn with a polished browser UI.</h1>
-                <p class="lede">Fill in a customer profile, use the demo customer to get started, and see the churn probability instantly. The page uses the same FastAPI backend that powers the API and the Render deployment.</p>
-            </div>
-            <div class="stats">
-                <div class="stat">
-                    <strong>FastAPI</strong>
-                    <span>Single service for UI and inference</span>
-                </div>
-                <div class="stat">
-                    <strong>Render-ready</strong>
-                    <span>Uses the injected `PORT` at runtime</span>
-                </div>
+                <p class="lede">Fill in a customer profile, use the demo customer to get started, and see the churn probability instantly.</p>
             </div>
         </section>
 
@@ -519,7 +653,60 @@ def home() -> HTMLResponse:
                     </div>
                 </div>
                 <div class="message" id="message">Use the form to calculate churn risk.</div>
-                <div class="footer-note">If the API receives an unseen category or a missing field, the response will surface the validation error here.</div>
+                <div class="monitoring-card">
+                    <div class="monitoring-header">
+                        <div class="monitoring-title">
+                            <strong>Live monitoring</strong>
+                            <span>Backend health, service stats, and runtime metrics.</span>
+                        </div>
+                        <span class="refresh-pill" id="monitor-refresh">Refreshing...</span>
+                    </div>
+                    <div class="monitor-grid">
+                        <div class="mini-metric">
+                            <span>Service status</span>
+                            <strong id="monitor-health" class="status-dot warn">Checking</strong>
+                        </div>
+                        <div class="mini-metric">
+                            <span>Total predictions</span>
+                            <strong id="monitor-total">0</strong>
+                        </div>
+                        <div class="mini-metric">
+                            <span>Positive rate</span>
+                            <strong id="monitor-positive-rate">0%</strong>
+                        </div>
+                        <div class="mini-metric">
+                            <span>Avg probability</span>
+                            <strong id="monitor-avg-prob">0%</strong>
+                        </div>
+                    </div>
+                    <div class="monitor-grid">
+                        <div class="mini-metric">
+                            <span>Latency (last request)</span>
+                            <strong id="monitor-latency">--</strong>
+                        </div>
+                        <div class="mini-metric">
+                            <span>Predicted positives</span>
+                            <strong id="monitor-positives">0</strong>
+                        </div>
+                        <div class="mini-metric">
+                            <span>CPU usage</span>
+                            <strong id="monitor-cpu">--</strong>
+                        </div>
+                        <div class="mini-metric">
+                            <span>Memory usage</span>
+                            <strong id="monitor-memory">--</strong>
+                        </div>
+                    </div>
+                    <div class="metric-panel">
+                        <span class="result-label">Metric highlights</span>
+                        <div class="metric-list">
+                            <div class="metric-row"><span>Requests</span><span id="monitor-requests">--</span></div>
+                            <div class="metric-row"><span>Latency avg</span><span id="monitor-latency-avg">--</span></div>
+                            <div class="metric-row"><span>Error rate</span><span id="monitor-error-rate">--</span></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="footer-note">If the API receives an unseen category or a missing field, the response will surface the validation error here. The monitoring card refreshes automatically.</div>
             </aside>
         </section>
     </main>
@@ -536,6 +723,86 @@ def home() -> HTMLResponse:
         const message = document.getElementById("message");
         const demoButton = document.getElementById("demo-button");
         const resetButton = document.getElementById("reset-button");
+        const monitorRefresh = document.getElementById("monitor-refresh");
+        const monitorHealth = document.getElementById("monitor-health");
+        const monitorTotal = document.getElementById("monitor-total");
+        const monitorPositiveRate = document.getElementById("monitor-positive-rate");
+        const monitorAvgProb = document.getElementById("monitor-avg-prob");
+        const monitorLatency = document.getElementById("monitor-latency");
+        const monitorPositives = document.getElementById("monitor-positives");
+        const monitorRequests = document.getElementById("monitor-requests");
+        const monitorLatencyAvg = document.getElementById("monitor-latency-avg");
+        const monitorErrorRate = document.getElementById("monitor-error-rate");
+        const monitorCpu = document.getElementById("monitor-cpu");
+        const monitorMemory = document.getElementById("monitor-memory");
+
+        function setStatusDot(element, state) {{
+            element.classList.remove("ok", "warn", "error");
+            if (state) {{
+                element.classList.add(state);
+            }}
+        }}
+
+        async function refreshMonitoring() {{
+            monitorRefresh.textContent = "Refreshing...";
+
+            try {{
+                const [healthResponse, statsResponse] = await Promise.all([
+                    fetch("/health"),
+                    fetch("/stats"),
+                ]);
+                const systemResponse = await fetch("/system");
+
+                if (healthResponse.ok) {{
+                    monitorHealth.textContent = "Healthy";
+                    setStatusDot(monitorHealth, "ok");
+                }} else {{
+                    monitorHealth.textContent = "Degraded";
+                    setStatusDot(monitorHealth, "warn");
+                }}
+
+                if (statsResponse.ok) {{
+                    const stats = await statsResponse.json();
+                    monitorTotal.textContent = String(stats.predictions_total);
+                    monitorPositiveRate.textContent = `${{(stats.positive_rate * 100).toFixed(1)}}%`;
+                    monitorAvgProb.textContent = `${{(stats.average_churn_probability * 100).toFixed(1)}}%`;
+                    monitorPositives.textContent = String(stats.predictions_positive);
+                    monitorRequests.textContent = String(stats.predictions_total);
+                    monitorLatencyAvg.textContent = "--";
+                    monitorErrorRate.textContent = "--";
+                }} else {{
+                    monitorTotal.textContent = "--";
+                    monitorPositiveRate.textContent = "--";
+                    monitorAvgProb.textContent = "--";
+                    monitorPositives.textContent = "--";
+                    monitorRequests.textContent = "--";
+                    monitorLatencyAvg.textContent = "--";
+                    monitorErrorRate.textContent = "--";
+                }}
+
+                if (systemResponse.ok) {{
+                    const system = await systemResponse.json();
+                    monitorCpu.textContent = `${{system.cpu_percent.toFixed(1)}}%`;
+                    monitorMemory.textContent = `${{system.memory_mb.toFixed(1)}} MB`;
+                }} else {{
+                    monitorCpu.textContent = "--";
+                    monitorMemory.textContent = "--";
+                }}
+
+                const processTime = healthResponse.headers.get("X-Process-Time");
+                monitorLatency.textContent = processTime ? `${{processTime}}s` : "--";
+                monitorRefresh.textContent = `Updated ${{new Date().toLocaleTimeString()}}`;
+            }} catch (error) {{
+                monitorRefresh.textContent = "Monitoring unavailable";
+                monitorHealth.textContent = "Offline";
+                setStatusDot(monitorHealth, "error");
+                monitorRequests.textContent = "--";
+                monitorLatencyAvg.textContent = "--";
+                monitorErrorRate.textContent = "--";
+                monitorCpu.textContent = "--";
+                monitorMemory.textContent = "--";
+            }}
+        }}
 
         function setMessage(text, isError = false) {{
             message.textContent = text;
@@ -622,6 +889,8 @@ def home() -> HTMLResponse:
         }}
 
         renderSections();
+        refreshMonitoring();
+        setInterval(refreshMonitoring, 15000);
 
         resetButton.addEventListener("click", () => {{
             form.reset();
@@ -683,6 +952,37 @@ def health():
         return {"status": "ok"}
 
 
+@app.get("/metrics")
+def metrics() -> Response:
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+@app.get("/stats")
+def stats():
+    with STATS_LOCK:
+        total = PREDICTION_COUNTS["positive"] + PREDICTION_COUNTS["negative"]
+        average_probability = round(PREDICTION_SUM / total, 4) if total else 0.0
+        positive_rate = round(PREDICTION_COUNTS["positive"] / total, 4) if total else 0.0
+
+    return {
+        "predictions_total": total,
+        "predictions_positive": PREDICTION_COUNTS["positive"],
+        "predictions_negative": PREDICTION_COUNTS["negative"],
+        "positive_rate": positive_rate,
+        "average_churn_probability": average_probability,
+    }
+
+
+@app.get("/system")
+def system():
+    cpu_percent = PROCESS.cpu_percent(interval=0.0)
+    memory_mb = PROCESS.memory_info().rss / (1024 * 1024)
+    return {
+        "cpu_percent": round(cpu_percent, 2),
+        "memory_mb": round(memory_mb, 2),
+    }
+
+
 @app.post("/predict")
 def predict(record: CustomerRecord):
         data = record.features
@@ -706,5 +1006,14 @@ def predict(record: CustomerRecord):
 
         probability = float(MODEL.predict_proba(row)[0][1])
         prediction = int(probability >= 0.5)
+
+        PREDICTION_TOTAL.inc()
+        with STATS_LOCK:
+            global PREDICTION_SUM
+            PREDICTION_SUM += probability
+            if prediction == 1:
+                PREDICTION_COUNTS["positive"] += 1
+            else:
+                PREDICTION_COUNTS["negative"] += 1
 
         return {"churn_probability": round(probability, 4), "prediction": prediction}
