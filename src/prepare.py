@@ -1,4 +1,5 @@
 import os
+import joblib
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
@@ -32,10 +33,12 @@ def preprocess_and_split_data(df):
     numeric_cols = X.select_dtypes(include=['int64', 'float64']).columns.tolist()
     categorical_cols = X.select_dtypes(include=['object']).columns.tolist()
     
-    # Categorical Encoding
-    le = LabelEncoder()
+    # one encoder per column so each can be saved and reused at inference time
+    label_encoders = {}
     for col in categorical_cols:
+        le = LabelEncoder()
         X[col] = le.fit_transform(X[col].astype(str))
+        label_encoders[col] = le
         
     # --- STEP 1: Split into Train (70%) and Temporary (30%) ---
     X_train, X_temp, y_train, y_temp = train_test_split(
@@ -59,7 +62,7 @@ def preprocess_and_split_data(df):
     print(f"Val Class Dist: {y_val.value_counts(normalize=True).to_dict()}")
     print(f"Test Class Dist: {y_test.value_counts(normalize=True).to_dict()}")
     
-    return X_train, X_val, X_test, y_train, y_val, y_test
+    return X_train, X_val, X_test, y_train, y_val, y_test, label_encoders, scaler, X_train.columns.tolist()
 
 def main():
     raw_data_path = "data/raw/telco_prep.csv"
@@ -67,8 +70,8 @@ def main():
     os.makedirs(processed_dir, exist_ok=True)
     
     df = load_and_validate_data(raw_data_path)
-    X_train, X_val, X_test, y_train, y_val, y_test = preprocess_and_split_data(df)
-    
+    X_train, X_val, X_test, y_train, y_val, y_test, label_encoders, scaler, feature_cols = preprocess_and_split_data(df)
+
     # Save processed splits
     X_train.to_csv(os.path.join(processed_dir, "X_train.csv"), index=False)
     X_val.to_csv(os.path.join(processed_dir, "X_val.csv"), index=False)
@@ -76,8 +79,15 @@ def main():
     y_train.to_csv(os.path.join(processed_dir, "y_train.csv"), index=False)
     y_val.to_csv(os.path.join(processed_dir, "y_val.csv"), index=False)
     y_test.to_csv(os.path.join(processed_dir, "y_test.csv"), index=False)
-    
+
+    # Save preprocessor artifacts for the inference service
+    os.makedirs("models", exist_ok=True)
+    joblib.dump(label_encoders, "models/label_encoders.pkl")
+    joblib.dump(scaler,         "models/scaler.pkl")
+    joblib.dump(feature_cols,   "models/feature_columns.pkl")
+
     print("\nData preparation complete! Train, Validation, and Test files saved.")
+    print("Preprocessor artifacts saved to models/")
 
 if __name__ == "__main__":
     main()

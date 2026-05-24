@@ -13,6 +13,9 @@ stages:
       - data/processed/y_test.csv
       - data/processed/y_train.csv
       - data/processed/y_val.csv
+      - models/label_encoders.pkl
+      - models/scaler.pkl
+      - models/feature_columns.pkl
 
   train:
     cmd: python src/train.py
